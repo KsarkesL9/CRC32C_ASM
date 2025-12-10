@@ -25,5 +25,7 @@ private:
     Ui::MainWindow ui;
 
     QString formatFileSize(qint64 size);
+    QString formatTimeElapsed(qint64 nanoseconds);
     void applyProfessionalStyle(); // Metoda stylizuj¹ca
+
 };

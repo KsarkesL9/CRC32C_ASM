@@ -10,10 +10,11 @@ MainWindow::MainWindow(QWidget* parent)
 {
     ui.setupUi(this);
 
-    // Initial Configuration
+    this->setWindowIcon(QIcon(":/resources/app_icon.ico"));
+
     ui.comboBoxAlgo->addItem("C++ (Standard Library)", 0);
     ui.comboBoxAlgo->addItem("ASM (Assembly x64 Optimized)", 1);
-
+    this->setWindowIcon(QIcon("app_icon.ico"));
     QList<int> threadCounts = { 1, 2, 4, 8, 16, 32, 64 };
     for (int count : threadCounts) {
         ui.comboBoxThreads->addItem(QString::number(count), count);
@@ -21,7 +22,6 @@ MainWindow::MainWindow(QWidget* parent)
 
     ui.progressBar->setValue(0);
 
-    // Apply the visual theme
     applyProfessionalStyle();
 }
 
@@ -29,9 +29,33 @@ MainWindow::~MainWindow()
 {
 }
 
+QString MainWindow::formatTimeElapsed(qint64 nanoseconds)
+{
+    if (nanoseconds < 1000) {
+        return QString("%1 ns").arg(nanoseconds);
+    }
+
+    double value = nanoseconds;
+
+    // Microseconds (\u00B5 to symbol mikro)
+    value /= 1000.0;
+    if (value < 1000.0) {
+        return QString("%1 \u00B5s").arg(value, 0, 'f', 2);
+    }
+
+    // Milliseconds
+    value /= 1000.0;
+    if (value < 1000.0) {
+        return QString("%1 ms").arg(value, 0, 'f', 2);
+    }
+
+    // Seconds
+    value /= 1000.0;
+    return QString("%1 s").arg(value, 0, 'f', 3);
+}
+
 void MainWindow::applyProfessionalStyle()
 {
-    // Modern Dark Theme styling using QSS
     QString style = R"(
         QMainWindow {
             background-color: #2b2b2b;
@@ -177,28 +201,25 @@ void MainWindow::on_pushBtnCalculate_clicked()
     ui.progressBar->setValue(0);
     ui.labelStats->setText("Calculation in progress...");
 
-    // Timer start
     QElapsedTimer timer;
     timer.start();
 
-    // Simulation of progress
     ui.progressBar->setValue(10);
-    // ... logic placeholder ...
+
     ui.progressBar->setValue(50);
 
-    qint64 elapsedMs = timer.elapsed();
+    qint64 nsecs = timer.nsecsElapsed();
     ui.progressBar->setValue(100);
 
-    // Fake result for GUI test
     QString fakeResult = "A1B2C3D4";
     ui.lineEditResult->setText(fakeResult);
 
-    // Update stats
     QFileInfo fileInfo(filePath);
-    double elapsedSeconds = elapsedMs / 1000.0;
 
-    ui.labelStats->setText(QString("Time: %1 s | Size: %2")
-        .arg(QString::number(elapsedSeconds, 'f', 3))
+    QString timeString = formatTimeElapsed(nsecs);
+
+    ui.labelStats->setText(QString("Time: %1 | Size: %2")
+        .arg(timeString)
         .arg(formatFileSize(fileInfo.size())));
 
     ui.pushBtnCalculate->setEnabled(true);
