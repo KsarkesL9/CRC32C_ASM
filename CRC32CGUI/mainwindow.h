@@ -7,6 +7,7 @@
 
 extern "C" int AsmAdd(int a, int b);
 
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -15,10 +16,14 @@ public:
     MainWindow(QWidget* parent = nullptr);
     ~MainWindow();
 
-public slots:
-    void on_calculateCppButton_clicked();
-    void on_calculateAsmButton_clicked();
+private slots:
+    void on_pushBtnBrowse_clicked();
+    void on_pushBtnCalculate_clicked();
+    void on_pushBtnHelp_clicked(); // Nowy slot dla pomocy
 
 private:
     Ui::MainWindow ui;
+
+    QString formatFileSize(qint64 size);
+    void applyProfessionalStyle(); // Metoda stylizuj¹ca
 };
