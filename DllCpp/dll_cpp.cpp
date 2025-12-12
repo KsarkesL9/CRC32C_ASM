@@ -1,12 +1,11 @@
 #include "dll_cpp.h"
 #include <array>
-#include <cstring> // dla memcpy (bezpieczne rzutowanie typów)
+#include <cstring>
+#include <vector>
 
 extern "C" DLL_API int CppAdd(int a, int b) {
     return a + b;
 }
-
-// --- Wspólne ---
 
 extern "C" DLL_API uint32_t CppCrc32cInit() {
     return 0xFFFFFFFF;
@@ -16,9 +15,74 @@ extern "C" DLL_API uint32_t CppCrc32cFinalize(uint32_t currentCrc) {
     return currentCrc ^ 0xFFFFFFFF;
 }
 
-// --- Metoda 1: Bit-wise (Bardzo wolna) ---
-// Przetwarza dane bit po bicie, bez u¿ycia tablicy pamiêci.
-// Dobra do zrozumienia matematyki, tragiczna wydajnoœciowo.
+namespace {
+    const uint32_t POLY = 0x82F63B78;
+
+    uint32_t gf2_matrix_times(const uint32_t* mat, uint32_t vec) {
+        uint32_t sum = 0;
+        int idx = 0;
+        while (vec) {
+            if (vec & 1)
+                sum ^= mat[idx];
+            vec >>= 1;
+            idx++;
+        }
+        return sum;
+    }
+
+    void gf2_matrix_multiply(uint32_t* dest, const uint32_t* mat1, const uint32_t* mat2) {
+        for (int i = 0; i < 32; i++) {
+            dest[i] = gf2_matrix_times(mat1, mat2[i]);
+        }
+    }
+
+    uint32_t crc32c_combine_impl(uint32_t crc1, uint32_t crc2, size_t len2) {
+        if (len2 == 0) return crc1 ^ crc2;
+
+        uint32_t odd[32];
+        uint32_t even[32];
+
+        for (int n = 0; n < 32; n++) {
+            uint32_t c = (1u << n);
+            for (int k = 0; k < 8; k++) {
+                if (c & 1)
+                    c = (c >> 1) ^ POLY;
+                else
+                    c >>= 1;
+            }
+            odd[n] = c;
+        }
+
+        for (int n = 0; n < 32; n++) {
+            even[n] = (1u << n);
+        }
+
+        uint32_t tmp[32];
+        uint32_t* result = even;
+        uint32_t* base = odd;
+
+        while (len2 > 0) {
+            if (len2 & 1) {
+                gf2_matrix_multiply(tmp, result, base);
+                std::memcpy(result, tmp, 32 * sizeof(uint32_t));
+            }
+
+            len2 >>= 1;
+            if (len2 == 0) break;
+
+            gf2_matrix_multiply(tmp, base, base);
+            std::memcpy(base, tmp, 32 * sizeof(uint32_t));
+        }
+
+        uint32_t shiftedCrc1 = gf2_matrix_times(result, crc1);
+
+        return shiftedCrc1 ^ crc2;
+    }
+}
+
+extern "C" DLL_API uint32_t CppCrc32cCombine(uint32_t crc1, uint32_t crc2, size_t len2) {
+    return crc32c_combine_impl(crc1, crc2, len2);
+}
 
 extern "C" DLL_API uint32_t CppCrc32cUpdateBitwise(uint32_t currentCrc, const uint8_t* data, size_t length)
 {
@@ -26,7 +90,7 @@ extern "C" DLL_API uint32_t CppCrc32cUpdateBitwise(uint32_t currentCrc, const ui
     const uint32_t polynomial = 0x82F63B78;
 
     for (size_t i = 0; i < length; ++i) {
-        crc ^= data[i]; // XOR wejœcia z CRC
+        crc ^= data[i];
         for (int j = 0; j < 8; ++j) {
             if (crc & 1)
                 crc = (crc >> 1) ^ polynomial;
@@ -37,17 +101,11 @@ extern "C" DLL_API uint32_t CppCrc32cUpdateBitwise(uint32_t currentCrc, const ui
     return crc;
 }
 
-// --- Metoda 2 & 3: Slicing (Tablice) ---
-
 namespace {
-    // Generuje 8 tablic po 256 wpisów.
-    // table[0] to standardowa tablica (Slicing-by-1).
-    // table[1..7] to tablice przesuniête, pozwalaj¹ce przetwarzaæ kolejne bajty w jednym kroku.
     std::array<std::array<uint32_t, 256>, 8> GenerateCrc32cTable8() {
         std::array<std::array<uint32_t, 256>, 8> tables;
         const uint32_t polynomial = 0x82F63B78;
 
-        // Generowanie pierwszej tablicy (standardowej)
         for (uint32_t i = 0; i < 256; ++i) {
             uint32_t crc = i;
             for (int j = 0; j < 8; ++j) {
@@ -56,8 +114,6 @@ namespace {
             tables[0][i] = crc;
         }
 
-        // Generowanie kolejnych 7 tablic na podstawie pierwszej
-        // table[k][i] = (table[k-1][i] >> 8) ^ table[0][table[k-1][i] & 0xFF]
         for (int i = 0; i < 256; i++) {
             for (int k = 1; k < 8; k++) {
                 uint32_t prev = tables[k - 1][i];
@@ -74,12 +130,10 @@ namespace {
     }
 }
 
-// --- Metoda 2: Slicing-by-1 (Standardowa) ---
-
 extern "C" DLL_API uint32_t CppCrc32cUpdateSlicing1(uint32_t currentCrc, const uint8_t* data, size_t length)
 {
     const auto& tables = GetCrc32cTables();
-    const auto& table = tables[0]; // U¿ywamy tylko pierwszej tablicy
+    const auto& table = tables[0];
     uint32_t crc = currentCrc;
 
     for (size_t i = 0; i < length; ++i) {
@@ -90,31 +144,20 @@ extern "C" DLL_API uint32_t CppCrc32cUpdateSlicing1(uint32_t currentCrc, const u
     return crc;
 }
 
-// --- Metoda 3: Slicing-by-8 (Szybka) ---
-
 extern "C" DLL_API uint32_t CppCrc32cUpdateSlicing8(uint32_t currentCrc, const uint8_t* data, size_t length)
 {
     const auto& tables = GetCrc32cTables();
     uint32_t crc = currentCrc;
     size_t i = 0;
 
-    // G³ówna pêtla przetwarzaj¹ca po 8 bajtów
-    // Warunek: musimy mieæ co najmniej 8 bajtów do przetworzenia
     for (; i + 8 <= length; i += 8) {
-        // Pobieramy 8 bajtów danych (dwa s³owa 32-bitowe dla uproszczenia kodu na x86/x64)
         uint32_t term1;
         uint32_t term2;
-        // U¿ywamy memcpy aby unikn¹æ problemów z wyrównaniem pamiêci (alignment)
-        // Kompilator i tak zoptymalizuje to do prostego ³adowania rejestrów
         std::memcpy(&term1, data + i, 4);
         std::memcpy(&term2, data + i + 4, 4);
 
-        // XORujemy pierwsze 4 bajty danych z obecnym CRC
         term1 ^= crc;
 
-        // Magia Slicing-by-8:
-        // Wykonujemy lookupy dla 8 bajtów równolegle (w sensie zale¿noœci danych)
-        // Indeksy s¹ pobierane z poszczególnych bajtów term1 i term2
         crc = tables[7][(term1) & 0xFF] ^
             tables[6][(term1 >> 8) & 0xFF] ^
             tables[5][(term1 >> 16) & 0xFF] ^
@@ -125,7 +168,6 @@ extern "C" DLL_API uint32_t CppCrc32cUpdateSlicing8(uint32_t currentCrc, const u
             tables[0][(term2 >> 24)];
     }
 
-    // Obs³uga "ogona" (pozosta³e 0-7 bajtów) metod¹ standardow¹ Slicing-by-1
     for (; i < length; ++i) {
         uint8_t index = (crc ^ data[i]) & 0xFF;
         crc = (crc >> 8) ^ tables[0][index];
@@ -134,7 +176,6 @@ extern "C" DLL_API uint32_t CppCrc32cUpdateSlicing8(uint32_t currentCrc, const u
     return crc;
 }
 
-// Kompatybilnoœæ wsteczna
 extern "C" DLL_API uint32_t CppCrc32c(const uint8_t* data, size_t length)
 {
     return CppCrc32cFinalize(CppCrc32cUpdateSlicing1(CppCrc32cInit(), data, length));
