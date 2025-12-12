@@ -25,8 +25,8 @@ MainWindow::MainWindow(QWidget* parent)
 
     ui.progressBar->setValue(0);
 
-    setupMemoryControls(); // Combo od chunków
-    setupRamControl();     // Nowy przycisk Preload
+    setupMemoryControls(); 
+    setupRamControl();     
 
     applyProfessionalStyle();
 }
@@ -54,13 +54,11 @@ void MainWindow::setupMemoryControls()
 
 void MainWindow::setupRamControl()
 {
-    // Tworzymy przycisk i dodajemy go obok przycisku Browse
     pushBtnLoadRam = new QPushButton("Preload to RAM", ui.groupBoxFile);
-    pushBtnLoadRam->setObjectName("pushBtnLoadRam"); // Dla CSS
+    pushBtnLoadRam->setObjectName("pushBtnLoadRam"); 
     pushBtnLoadRam->setCursor(Qt::PointingHandCursor);
     pushBtnLoadRam->setToolTip("Loads the file into memory to measure pure algorithm speed without disk I/O.");
 
-    // Dodajemy do layoutu, w którym jest Browse (horizontalLayoutFile)
     ui.horizontalLayoutFile->addWidget(pushBtnLoadRam);
 
     connect(pushBtnLoadRam, &QPushButton::clicked, this, &MainWindow::on_pushBtnLoadRam_clicked);
@@ -69,12 +67,10 @@ void MainWindow::setupRamControl()
 void MainWindow::on_pushBtnLoadRam_clicked()
 {
     if (m_isRamLoaded) {
-        // --- UNLOAD ---
         m_ramBuffer.clear();
-        m_ramBuffer.squeeze(); // Zwolnij pamiêæ
+        m_ramBuffer.squeeze(); 
         m_isRamLoaded = false;
 
-        // Przywróæ UI
         pushBtnLoadRam->setText("Preload to RAM");
         ui.pushBtnBrowse->setEnabled(true);
         ui.lineEditFilePath->setEnabled(true);
@@ -82,7 +78,6 @@ void MainWindow::on_pushBtnLoadRam_clicked()
         ui.labelStats->setText("RAM cleared.");
     }
     else {
-        // --- LOAD ---
         QString filePath = ui.lineEditFilePath->text();
         if (filePath.isEmpty()) {
             QMessageBox::warning(this, "Error", "Select a file first!");
@@ -98,7 +93,6 @@ void MainWindow::on_pushBtnLoadRam_clicked()
         ui.labelStats->setText("Loading into RAM... please wait.");
         QApplication::processEvents();
 
-        // Wczytanie ca³oœci
         m_ramBuffer = file.readAll();
         file.close();
 
@@ -109,16 +103,14 @@ void MainWindow::on_pushBtnLoadRam_clicked()
 
         m_isRamLoaded = true;
 
-        // Zablokuj zmianê pliku i trybu pamiêci
         pushBtnLoadRam->setText("Unload from RAM");
         ui.pushBtnBrowse->setEnabled(false);
         ui.lineEditFilePath->setEnabled(false);
-        comboBoxMemoryMode->setEnabled(false); // Tryb chunkowania nie ma sensu, gdy dane s¹ w RAM
+        comboBoxMemoryMode->setEnabled(false); 
 
         ui.labelStats->setText(QString("Loaded %1 into RAM. Ready to calculate.").arg(formatFileSize(m_ramBuffer.size())));
     }
 
-    // Odœwie¿ styl (¿eby przycisk zmieni³ kolor jeœli zdefiniujemy to w CSS)
     applyProfessionalStyle();
 }
 
@@ -163,17 +155,14 @@ void MainWindow::applyProfessionalStyle()
         QComboBox QAbstractItemView { background-color: #2b2b2b; color: #ffffff; selection-background-color: #007acc; }
     )";
 
-    // Specyficzny styl dla przycisku RAM (zmienny w zale¿noœci od stanu)
     QString ramButtonStyle;
     if (m_isRamLoaded) {
-        // Stan za³adowany: Czerwony/Ostrzegawczy (aby roz³adowaæ)
         ramButtonStyle = R"(
             QPushButton#pushBtnLoadRam { background-color: #a32a2a; border: 1px solid #d44; }
             QPushButton#pushBtnLoadRam:hover { background-color: #c93030; }
         )";
     }
     else {
-        // Stan domyœlny: Fioletowy (dla odró¿nienia od Browse)
         ramButtonStyle = R"(
             QPushButton#pushBtnLoadRam { background-color: #5a3a7a; border: 1px solid #7a5a9a; }
             QPushButton#pushBtnLoadRam:hover { background-color: #6a4a8a; }
@@ -205,20 +194,16 @@ void MainWindow::on_pushBtnBrowse_clicked()
 
 void MainWindow::on_pushBtnCalculate_clicked()
 {
-    // 1. Walidacja: Czy wybrano plik lub za³adowano go do RAM?
     if (!m_isRamLoaded && ui.lineEditFilePath->text().isEmpty()) {
         QMessageBox::warning(this, "Error", "No file selected!");
         return;
     }
 
-    // 2. Pobierz wybrany algorytm
     int algoIndex = ui.comboBoxAlgo->currentData().toInt();
 
-    // 3. Zablokuj interfejs na czas obliczeñ
     ui.pushBtnCalculate->setEnabled(false);
     ui.comboBoxAlgo->setEnabled(false);
 
-    // Jeœli pracujemy na pliku z dysku (nie RAM), blokujemy te¿ kontrolki wyboru pliku
     if (!m_isRamLoaded) {
         ui.pushBtnBrowse->setEnabled(false);
         pushBtnLoadRam->setEnabled(false);
@@ -227,10 +212,9 @@ void MainWindow::on_pushBtnCalculate_clicked()
 
     ui.progressBar->setValue(0);
     ui.labelStats->setText("Calculation in progress...");
-    QApplication::processEvents(); // Odœwie¿ UI przed startem pêtli
+    QApplication::processEvents(); 
 
-    // 4. Przygotowanie zmiennych
-    uint32_t currentCrc = CppCrc32cInit(); // Inicjalizacja (0xFFFFFFFF)
+    uint32_t currentCrc = CppCrc32cInit(); 
     qint64 fileSize = 0;
 
     if (m_isRamLoaded) {
@@ -242,11 +226,9 @@ void MainWindow::on_pushBtnCalculate_clicked()
     }
 
     QElapsedTimer timer;
-    timer.start(); // START POMIARU CZASU
+    timer.start();
 
-    // ---------------------------------------------------------
-    // SCENARIUSZ A: DANE W RAM (Benchmark samego CPU)
-    // ---------------------------------------------------------
+
     if (m_isRamLoaded) {
         const uint8_t* rawData = reinterpret_cast<const uint8_t*>(m_ramBuffer.constData());
         size_t len = m_ramBuffer.size();
@@ -261,20 +243,15 @@ void MainWindow::on_pushBtnCalculate_clicked()
             currentCrc = CppCrc32cUpdateSlicing8(currentCrc, rawData, len);
         }
         else {
-            // ASM Fallback (na razie Slicing-8, dopóki nie pod³¹czymy ASM)
             currentCrc = CppCrc32cUpdateSlicing8(currentCrc, rawData, len);
         }
         ui.progressBar->setValue(100);
     }
-    // ---------------------------------------------------------
-    // SCENARIUSZ B: CZYTANIE Z DYSKU (I/O + CPU)
-    // ---------------------------------------------------------
     else {
         QString filePath = ui.lineEditFilePath->text();
         QFile file(filePath);
         if (!file.open(QIODevice::ReadOnly)) {
             QMessageBox::critical(this, "Error", "Cannot open file!");
-            // Odblokuj UI w razie b³êdu
             ui.pushBtnCalculate->setEnabled(true);
             ui.comboBoxAlgo->setEnabled(true);
             ui.pushBtnBrowse->setEnabled(true);
@@ -285,7 +262,6 @@ void MainWindow::on_pushBtnCalculate_clicked()
 
         qint64 chunkSize = comboBoxMemoryMode->currentData().toLongLong();
 
-        // --- Podscenariusz B1: Ca³y plik naraz (du¿e zu¿ycie RAM, szybkie I/O) ---
         if (chunkSize == -1) {
             QByteArray allData = file.readAll();
             const uint8_t* rawData = reinterpret_cast<const uint8_t*>(allData.constData());
@@ -298,7 +274,6 @@ void MainWindow::on_pushBtnCalculate_clicked()
 
             ui.progressBar->setValue(100);
         }
-        // --- Podscenariusz B2: Czytanie porcjami (bezpieczne dla RAM) ---
         else {
             qint64 bytesReadTotal = 0;
             if (fileSize == 0) ui.progressBar->setValue(100);
@@ -317,21 +292,18 @@ void MainWindow::on_pushBtnCalculate_clicked()
 
                 bytesReadTotal += len;
 
-                // Aktualizacja paska postêpu
                 if (fileSize > 0) {
                     ui.progressBar->setValue(static_cast<int>((bytesReadTotal * 100) / fileSize));
                 }
-                QApplication::processEvents(); // Responsywnoœæ UI
+                QApplication::processEvents(); 
             }
         }
         file.close();
     }
 
-    // 5. Finalizacja wyniku (XOR Out)
     uint32_t finalResult = CppCrc32cFinalize(currentCrc);
     qint64 nsecs = timer.nsecsElapsed();
 
-    // 6. Wyœwietlenie wyników
     QString resultHex = QString("%1").arg(finalResult, 8, 16, QChar('0')).toUpper();
     ui.lineEditResult->setText(resultHex);
 
@@ -340,7 +312,6 @@ void MainWindow::on_pushBtnCalculate_clicked()
         .arg(timeString)
         .arg(formatFileSize(fileSize)));
 
-    // 7. Przywrócenie stanu kontrolek
     ui.pushBtnCalculate->setEnabled(true);
     ui.comboBoxAlgo->setEnabled(true);
 
