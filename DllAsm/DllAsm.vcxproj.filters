@@ -15,13 +15,13 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <MASM Include="asm_add.asm">
-      <Filter>Pliki źródłowe</Filter>
-    </MASM>
-  </ItemGroup>
-  <ItemGroup>
     <None Include="asm_add.def">
       <Filter>Pliki nagłówkowe</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="asm_add.asm">
+      <Filter>Pliki źródłowe</Filter>
+    </MASM>
   </ItemGroup>
 </Project>

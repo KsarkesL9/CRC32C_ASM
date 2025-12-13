@@ -16,7 +16,9 @@ MainWindow::MainWindow(QWidget* parent)
     ui.comboBoxAlgo->addItem("C++ Bit-wise (Very Slow)", 0);
     ui.comboBoxAlgo->addItem("C++ Slicing-by-1 (Standard)", 1);
     ui.comboBoxAlgo->addItem("C++ Slicing-by-8 (High Performance)", 2);
-    ui.comboBoxAlgo->addItem("ASM (Not connected)", 3);
+    ui.comboBoxAlgo->addItem("ASM (Hardware CRC32)", 3); 
+    ui.comboBoxAlgo->addItem("ASM (Hardware CRC32 with pipelaning", 4);
+    ui.comboBoxAlgo->addItem("ASM (Fushion)", 5);
 
     QList<int> threadCounts = { 1, 2, 4, 8, 16, 32, 64 };
     for (int count : threadCounts) {
@@ -73,7 +75,7 @@ void MainWindow::on_comboBoxAlgo_currentIndexChanged(int index)
 {
 
     if (index == 0) {
-        ui.comboBoxThreads->setCurrentIndex(0); 
+        ui.comboBoxThreads->setCurrentIndex(0);
         ui.comboBoxThreads->setEnabled(false);
         ui.comboBoxThreads->setToolTip("Multi-threading disabled for Bit-wise algorithm.");
     }
@@ -203,12 +205,13 @@ void MainWindow::on_pushBtnHelp_clicked()
             <li><b>C++ Bit-wise:</b> Reference implementation. Processes data bit-by-bit. Extremely slow, intended for educational comparison. <i>(Single-threaded only)</i>.</li>
             <li><b>C++ Slicing-by-1:</b> Standard implementation using a single lookup table (256 entries).</li>
             <li><b>C++ Slicing-by-8:</b> High-performance implementation processing 8 bytes at a time using 8 parallel lookup tables. <b>Recommended.</b></li>
+            <li><b>ASM (Hardware CRC32):</b> Uses the CPU's dedicated <code>crc32</code> instruction. Extremely fast but limited to 1 thread in this version.</li>
         </ul>
 
         <h3 style="color: #00aaff;">2. Multi-threading</h3>
         <p>You can select up to 64 threads. The data is split into logical chunks and processed in parallel using <code>std::async</code>.</p>
         <p>Partial results from threads are combined mathematically using <b>GF(2) matrix exponentiation</b> (shift-and-multiply) to ensure the final checksum is identical to a single-threaded run.</p>
-        <p><i>Note: Multi-threading is disabled for the Bit-wise algorithm due to performance constraints.</i></p>
+        <p><i>Note: Multi-threading is disabled for Bit-wise and ASM algorithms.</i></p>
 
         <h3 style="color: #00aaff;">3. Memory Modes & Disk I/O</h3>
         <p>Configure how files are read from the disk to balance RAM usage vs. speed:</p>
@@ -224,6 +227,7 @@ void MainWindow::on_pushBtnHelp_clicked()
             <li><b>When inactive:</b> The timer includes Disk reading speed + Calculation time.</li>
         </ul>
     )";
+
     QMessageBox::information(this, "User Guide", helpText);
 }
 
@@ -239,10 +243,9 @@ void MainWindow::on_pushBtnBrowse_clicked()
     ui.progressBar->setValue(0);
 }
 
-
 uint32_t MainWindow::calculateChunk(const uint8_t* data, size_t length, int algoIndex)
 {
-    uint32_t crc = 0; 
+    uint32_t crc = 0;
 
     if (algoIndex == 0) {
         crc = CppCrc32cUpdateBitwise(crc, data, length);
@@ -250,8 +253,17 @@ uint32_t MainWindow::calculateChunk(const uint8_t* data, size_t length, int algo
     else if (algoIndex == 1) {
         crc = CppCrc32cUpdateSlicing1(crc, data, length);
     }
-    else {
+    else if (algoIndex == 2) {
         crc = CppCrc32cUpdateSlicing8(crc, data, length);
+    }
+    else if (algoIndex == 3) {
+        crc = AsmCrc32cUpdate(crc, data, length);
+    }
+    else if (algoIndex == 4) {
+        crc = AsmCrc32cUpdate3Way(crc, data, length);
+    }
+    else if (algoIndex == 5) {
+        crc = AsmCrc32cUpdateFusion(crc, data, length);
     }
     return crc;
 }
@@ -296,7 +308,10 @@ void MainWindow::on_pushBtnCalculate_clicked()
             uint32_t crc = CppCrc32cInit();
             if (algoIndex == 0) crc = CppCrc32cUpdateBitwise(crc, buffer, totalSize);
             else if (algoIndex == 1) crc = CppCrc32cUpdateSlicing1(crc, buffer, totalSize);
-            else crc = CppCrc32cUpdateSlicing8(crc, buffer, totalSize);
+            else if (algoIndex == 2) crc = CppCrc32cUpdateSlicing8(crc, buffer, totalSize);
+            else if (algoIndex == 3) crc = AsmCrc32cUpdate(crc, buffer, totalSize);
+            else if (algoIndex == 4) crc = AsmCrc32cUpdate3Way(crc, buffer, totalSize);
+            else if (algoIndex == 5) crc = AsmCrc32cUpdateFusion(crc, buffer, totalSize);
             return CppCrc32cFinalize(crc);
         }
 
@@ -318,7 +333,7 @@ void MainWindow::on_pushBtnCalculate_clicked()
             currentOffset += size;
         }
 
-        uint32_t runningCrc = CppCrc32cInit(); 
+        uint32_t runningCrc = CppCrc32cInit();
 
         currentOffset = 0;
         chunkSize = totalSize / threadCount;
@@ -364,7 +379,6 @@ void MainWindow::on_pushBtnCalculate_clicked()
             ui.progressBar->setValue(100);
         }
         else {
- 
             uint32_t runningCrc = CppCrc32cInit();
             qint64 bytesReadTotal = 0;
 
@@ -377,7 +391,11 @@ void MainWindow::on_pushBtnCalculate_clicked()
                 if (threadCount == 1) {
                     if (algoIndex == 0) runningCrc = CppCrc32cUpdateBitwise(runningCrc, rawChunk, chunk.size());
                     else if (algoIndex == 1) runningCrc = CppCrc32cUpdateSlicing1(runningCrc, rawChunk, chunk.size());
-                    else runningCrc = CppCrc32cUpdateSlicing8(runningCrc, rawChunk, chunk.size());
+                    else if (algoIndex == 2) runningCrc = CppCrc32cUpdateSlicing8(runningCrc, rawChunk, chunk.size());
+                    else if (algoIndex == 3) runningCrc = AsmCrc32cUpdate(runningCrc, rawChunk, chunk.size());
+                    else if (algoIndex == 4) runningCrc = AsmCrc32cUpdate3Way(runningCrc, rawChunk, chunk.size());
+                    else if (algoIndex == 5) runningCrc = AsmCrc32cUpdateFusion(runningCrc, rawChunk, chunk.size());
+                    
                 }
                 else {
                     std::vector<std::future<uint32_t>> futures;
@@ -438,6 +456,7 @@ void MainWindow::on_pushBtnCalculate_clicked()
         comboBoxMemoryMode->setEnabled(true);
     }
 }
+
 QString MainWindow::formatFileSize(qint64 size)
 {
     QStringList units = { "B", "KB", "MB", "GB", "TB" };
