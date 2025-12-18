@@ -1,5 +1,5 @@
 <RCC>
     <qresource prefix="CRC32CGUI">
-	<file>app_icon.ico</file>
+		<file>app_icon.ico</file>
     </qresource>
 </RCC>

@@ -5,3 +5,4 @@ EXPORTS
     AsmCrc32cUpdate3Way
     AsmCrc32cUpdate
     AsmCrc32cUpdateFusion
+    AsmCrc32cUpdateReport
