@@ -1,11 +1,6 @@
 #include "dll_cpp.h"
 #include <array>
 #include <cstring>
-#include <vector>
-
-extern "C" DLL_API int CppAdd(int a, int b) {
-    return a + b;
-}
 
 extern "C" DLL_API uint32_t CppCrc32cInit() {
     return 0xFFFFFFFF;
@@ -176,7 +171,3 @@ extern "C" DLL_API uint32_t CppCrc32cUpdateSlicing8(uint32_t currentCrc, const u
     return crc;
 }
 
-extern "C" DLL_API uint32_t CppCrc32c(const uint8_t* data, size_t length)
-{
-    return CppCrc32cFinalize(CppCrc32cUpdateSlicing1(CppCrc32cInit(), data, length));
-}

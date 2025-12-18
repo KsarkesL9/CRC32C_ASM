@@ -5,10 +5,6 @@
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QFile>
-#include <sstream>
-#include <iomanip>
-#include <wmmintrin.h>
-#include <nmmintrin.h>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), m_isRamLoaded(false)
@@ -21,9 +17,7 @@ MainWindow::MainWindow(QWidget* parent)
     ui.comboBoxAlgo->addItem("C++ Slicing-by-1 (Standard)", 1);
     ui.comboBoxAlgo->addItem("C++ Slicing-by-8 (High Performance)", 2);
     ui.comboBoxAlgo->addItem("ASM (Hardware CRC32)", 3);
-    ui.comboBoxAlgo->addItem("ASM (Hardware CRC32 with pipelaning", 4);
-    ui.comboBoxAlgo->addItem("ASM (Fushion)", 5);
-    ui.comboBoxAlgo->addItem("ASM (Report PCLMULQDQ)", 6);
+    ui.comboBoxAlgo->addItem("ASM (Hardware CRC32 with pipelaning)", 4);
 
     QList<int> threadCounts = { 1, 2, 4, 8, 16, 32, 64 };
     for (int count : threadCounts) {
@@ -41,7 +35,6 @@ MainWindow::MainWindow(QWidget* parent)
     on_comboBoxAlgo_currentIndexChanged(ui.comboBoxAlgo->currentIndex());
 
     applyProfessionalStyle();
-    runDiagnostics();
 }
 
 MainWindow::~MainWindow()
@@ -263,16 +256,10 @@ uint32_t MainWindow::calculateChunk(const uint8_t* data, size_t length, int algo
         crc = CppCrc32cUpdateSlicing8(crc, data, length);
     }
     else if (algoIndex == 3) {
-        crc = AsmCrc32cUpdate(crc, data, length);
+        crc = AsmCrc32cHardwareScalar(crc, data, length);
     }
     else if (algoIndex == 4) {
-        crc = AsmCrc32cUpdate3Way(crc, data, length);
-    }
-    else if (algoIndex == 5) {
-        crc = AsmCrc32cUpdateFusion(crc, data, length);
-    }
-    else if (algoIndex == 6) {
-        crc = AsmCrc32cUpdateReport(crc, data, length);
+        crc = AsmCrc32cHardwarePipelining(crc, data, length);
     }
     return crc;
 }
@@ -318,10 +305,8 @@ void MainWindow::on_pushBtnCalculate_clicked()
             if (algoIndex == 0) crc = CppCrc32cUpdateBitwise(crc, buffer, totalSize);
             else if (algoIndex == 1) crc = CppCrc32cUpdateSlicing1(crc, buffer, totalSize);
             else if (algoIndex == 2) crc = CppCrc32cUpdateSlicing8(crc, buffer, totalSize);
-            else if (algoIndex == 3) crc = AsmCrc32cUpdate(crc, buffer, totalSize);
-            else if (algoIndex == 4) crc = AsmCrc32cUpdate3Way(crc, buffer, totalSize);
-            else if (algoIndex == 5) crc = AsmCrc32cUpdateFusion(crc, buffer, totalSize);
-            else if (algoIndex == 6) crc = AsmCrc32cUpdateReport(crc, buffer, totalSize);
+            else if (algoIndex == 3) crc = AsmCrc32cHardwareScalar(crc, buffer, totalSize);
+            else if (algoIndex == 4) crc = AsmCrc32cHardwarePipelining(crc, buffer, totalSize);
             return CppCrc32cFinalize(crc);
         }
 
@@ -402,10 +387,8 @@ void MainWindow::on_pushBtnCalculate_clicked()
                     if (algoIndex == 0) runningCrc = CppCrc32cUpdateBitwise(runningCrc, rawChunk, chunk.size());
                     else if (algoIndex == 1) runningCrc = CppCrc32cUpdateSlicing1(runningCrc, rawChunk, chunk.size());
                     else if (algoIndex == 2) runningCrc = CppCrc32cUpdateSlicing8(runningCrc, rawChunk, chunk.size());
-                    else if (algoIndex == 3) runningCrc = AsmCrc32cUpdate(runningCrc, rawChunk, chunk.size());
-                    else if (algoIndex == 4) runningCrc = AsmCrc32cUpdate3Way(runningCrc, rawChunk, chunk.size());
-                    else if (algoIndex == 5) runningCrc = AsmCrc32cUpdateFusion(runningCrc, rawChunk, chunk.size());
-                    else if (algoIndex == 6) runningCrc = AsmCrc32cUpdateReport(runningCrc, rawChunk, chunk.size());
+                    else if (algoIndex == 3) runningCrc = AsmCrc32cHardwareScalar(runningCrc, rawChunk, chunk.size());
+                    else if (algoIndex == 4) runningCrc = AsmCrc32cHardwarePipelining(runningCrc, rawChunk, chunk.size());
                 }
                 else {
                     std::vector<std::future<uint32_t>> futures;
@@ -479,148 +462,5 @@ QString MainWindow::formatFileSize(qint64 size)
     return QString::number(readableSize, 'f', 2) + " " + units[unitIndex];
 }
 
-std::string toHex(uint32_t val) {
-    std::stringstream ss;
-    ss << "0x" << std::uppercase << std::setfill('0') << std::setw(8) << std::hex << val;
-    return ss.str();
-}
-
-const uint64_t K1 = 0x0ccaa009e;
-const uint64_t K2 = 0x1751997d0; 
-
-uint32_t DebugFusionLogic(const uint8_t* data, size_t length) {
-    uint32_t crc = 0xFFFFFFFF;
-    const uint8_t* p = data;
-    size_t len = length;
-
-    while ((uintptr_t)p & 15 && len > 0) {
-        crc = _mm_crc32_u8(crc, *p);
-        p++;
-        len--;
-    }
-
-    if (len < 16) goto finalize;
-
-    {
-        __m128i k1k2 = _mm_set_epi64x(K2, K1);
-
-        __m128i xmm_crc = _mm_cvtsi32_si128(crc);
-        __m128i x0 = _mm_load_si128((const __m128i*)p);
-
-        x0 = _mm_xor_si128(x0, xmm_crc);
-
-        p += 16;
-        len -= 16;
-
-        while (len >= 16) {
-            __m128i h_mul = _mm_clmulepi64_si128(x0, k1k2, 0x11);
-            __m128i l_mul = _mm_clmulepi64_si128(x0, k1k2, 0x00);
-            x0 = _mm_xor_si128(h_mul, l_mul);
-
-            __m128i next_data = _mm_load_si128((const __m128i*)p);
-            x0 = _mm_xor_si128(x0, next_data);
-
-            p += 16;
-            len -= 16;
-        }
-
-        uint8_t tempBuf[16];
-        _mm_storeu_si128((__m128i*)tempBuf, x0);
-
-        crc = 0;
-        uint64_t* qPtr = (uint64_t*)tempBuf;
-        crc = _mm_crc32_u64(crc, qPtr[0]);
-        crc = _mm_crc32_u64(crc, qPtr[1]);
-    }
-
-finalize:
-    while (len > 0) {
-        crc = _mm_crc32_u8(crc, *p);
-        p++;
-        len--;
-    }
-
-    return crc ^ 0xFFFFFFFF;
-}
-
-void MainWindow::runDiagnostics()
-{
-    qDebug() << "=== ROZPOCZYNAM DIAGNOSTYKE ASM REPORT ===";
-
-    auto refCalc = [](const uint8_t* d, size_t l) -> uint32_t {
-        uint32_t crc = CppCrc32cInit();
-        crc = CppCrc32cUpdateSlicing8(crc, d, l);
-        return CppCrc32cFinalize(crc);
-        };
 
 
-    auto asmCalc = [](const uint8_t* d, size_t l) -> uint32_t {
-        uint32_t crc = 0xFFFFFFFF;
-        crc = AsmCrc32cUpdateFusion(crc, d, l);
-        return crc ^ 0xFFFFFFFF;
-        };
-
-    struct TestCase {
-        std::string name;
-        size_t len;
-        size_t offset;
-    };
-
-    std::vector<TestCase> tests = {
-        {"1. Maly bufor (Scalar)", 10, 0},
-        {"2. Sredni bufor (Scalar/Align)", 40, 0},
-        {"3. Prog wektora (64B - Wektor start)", 64, 0},
-        {"4. Wektor + Ogon (70B)", 70, 0},
-        {"5. Duzy wektor (128B - Fold loop)", 128, 0},
-        {"6. Niewyrownany start (+1B)", 64, 1},
-        {"7. Niewyrownany start (+3B)", 128, 3}
-    };
-
-
-    std::vector<uint8_t> buffer(256);
-    for (size_t i = 0; i < buffer.size(); ++i) buffer[i] = (uint8_t)i;
-
-    bool allPassed = true;
-
-    for (const auto& t : tests) {
-
-        const uint8_t* ptr = buffer.data();
-
-
-        size_t addr = reinterpret_cast<size_t>(ptr);
-        size_t alignedAddr = (addr + 15) & ~15;
-        ptr = reinterpret_cast<const uint8_t*>(alignedAddr);
-
-        const uint8_t* testPtr = ptr + t.offset;
-
-        uint32_t expected = refCalc(testPtr, t.len);
-        uint32_t actual = asmCalc(testPtr, t.len);
-        uint32_t debugInt = DebugFusionLogic(testPtr, t.len);
-
-        std::stringstream msg;
-        msg << "[TEST] " << std::left << std::setw(30) << t.name
-            << " Len: " << std::setw(3) << t.len
-            << " Off: " << t.offset;
-
-        if (expected == actual) {
-            msg << " -> PASS";
-            qDebug() << QString::fromStdString(msg.str());
-        }
-        else {
-            msg << " -> FAIL! Exp: " << toHex(expected) << " Act: " << toHex(actual) << " C++Int: " << toHex(debugInt);
-            qDebug() << QString::fromStdString(msg.str());
-
-
-            uint32_t diff = expected ^ actual;
-            qDebug() << "       Roznica bitowa (XOR): " << QString::fromStdString(toHex(diff));
-            allPassed = false;
-        }
-    }
-
-    if (allPassed) {
-        qDebug() << "=== DIAGNOSTYKA ZAKONCZONA SUKCESEM ===";
-    }
-    else {
-        qDebug() << "=== ZNALEZIONO BLEDY W IMPLEMENTACJI ===";
-    }
-}

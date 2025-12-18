@@ -1,8 +1,5 @@
 LIBRARY DllAsm
 
 EXPORTS
-    AsmAdd
-    AsmCrc32cUpdate3Way
-    AsmCrc32cUpdate
-    AsmCrc32cUpdateFusion
-    AsmCrc32cUpdateReport
+    AsmCrc32cHardwarePipelining
+    AsmCrc32cHardwareScalar
