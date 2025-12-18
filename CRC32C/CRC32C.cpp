@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>
 #include "../DllCpp/dll_cpp.h" 
 extern "C" int AsmAdd(int a, int b);
 

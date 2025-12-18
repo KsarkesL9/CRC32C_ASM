@@ -1,15 +1,13 @@
 .data
 align 16
-; CRC32C constants (polynomial 0x82F63B78)
-CONST_K1K2      DQ 00000000ccaa009eh, 00000001751997d0h   ; K1=x^544 mod P, K2=x^480 mod P
-CONST_K3K4      DQ 0163cd6124h, 00000001f7011640h        ; K3=x^160 mod P, K4=x^96 mod P
+CONST_K1K2      DQ 00000000ccaa009eh, 00000001751997d0h
+CONST_K3K4      DQ 0163cd6124h, 00000001f7011640h
 CONST_K5K6      DQ 0579665f3h, 047b04d9bh
 CONST_BARRETT   DQ 0dea713f1h, 000000000h
 CONST_POLY      DQ 082f63b78h, 000000000h
 CONST_MASK      DD 000000000h, 000000000h, 0ffffffffh, 0ffffffffh
 kAkB QWORD 0155AD968h, 02E7D11A7h
 kAkB_3way QWORD 08A074012h, 093E106A4h
-; Stałe dla 1024-bajtowego stride (x^16384 mod P, x^8192 mod P)
 kAkB_1024 QWORD 0F20C0DFEh, 0493C7D27h
 
 
@@ -126,7 +124,6 @@ AsmCrc32cUpdateFusion PROC FRAME
     mov rdi, rdx       
     mov rsi, r8         
 
-    ; Użyj ścieżki skalarnej dla wszystkich rozmiarów (vector path wymaga naprawy)
     jmp scalar_fallback
 
     test rdi, 15
@@ -155,7 +152,6 @@ vector_loop:
     cmp rsi, 64
     jb vector_fold
 
-    ; Interleaved Folding (4x128 bit)
     movdqa xmm4, xmm0
     pclmulqdq xmm4, xmm10, 11h
     pclmulqdq xmm0, xmm10, 00h
@@ -203,8 +199,6 @@ vector_fold:
     pxor xmm0, xmm4
     pxor xmm0, xmm3
 
-    ; Konwersja stanu XMM na CRC32C przez instrukcje sprzętowe
-    ; Zapisz xmm0 na stos i przelicz przez crc32
     sub rsp, 16
     movdqa [rsp], xmm0
     
@@ -213,7 +207,6 @@ vector_fold:
     crc32 rax, qword ptr [rsp + 8]
     add rsp, 16
     
-    ; Przetwórz pozostałe bajty (rsi zawiera liczbę)
     test rsi, rsi
     jz done
     
@@ -225,10 +218,9 @@ remaining_bytes:
     jmp done
 
 scalar_fallback:
-    ; Przetwarzaj 8 bajtów naraz
     mov r9, rsi
-    shr r9, 3           ; r9 = liczba qwordów
-    jz scalar_bytes     ; jeśli brak qwordów, idź do bajtów
+    shr r9, 3           
+    jz scalar_bytes     
     
     align 16
 scalar_qword_loop:
@@ -238,7 +230,7 @@ scalar_qword_loop:
     jnz scalar_qword_loop
 
 scalar_bytes:
-    and rsi, 7          ; pozostałe bajty (0-7)
+    and rsi, 7          
     jz done
 scalar_byte_loop:
     crc32 eax, byte ptr [rdi]
