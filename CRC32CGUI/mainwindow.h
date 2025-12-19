@@ -4,6 +4,7 @@
 #include <QLabel>
 #include <QComboBox>
 #include <QPushButton>
+#include <QFutureWatcher>
 #include "ui_CRC32CGUI.h" 
 #include "CrcCalculator.h"
 
@@ -20,7 +21,8 @@ private slots:
     void on_pushBtnCalculate_clicked();
     void on_pushBtnHelp_clicked();
     void on_pushBtnLoadRam_clicked();
-    void on_comboBoxAlgo_currentIndexChanged(int index); 
+    void on_comboBoxAlgo_currentIndexChanged(int index);
+    void on_calculationFinished();
 
 private:
     Ui::MainWindow ui;
@@ -33,10 +35,12 @@ private:
     bool m_isRamLoaded;
 
     CrcCalculator m_calculator;
+    QFutureWatcher<CrcCalculator::Result> m_watcher;
 
     QString formatFileSize(qint64 size);
     QString formatTimeElapsed(qint64 nanoseconds);
     void applyProfessionalStyle();
     void setupMemoryControls();
     void setupRamControl();
+    void toggleControls(bool enabled);
 };
