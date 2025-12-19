@@ -28,15 +28,11 @@ public:
         int threadCount;
     };
 
-    struct Result {
-        uint32_t crc;
-        qint64 nanoseconds;
-    };
-
     CrcCalculator();
 
-    Result calculateFromFile(const QString& filePath, const Settings& settings, qint64 chunkSize, std::function<void(int)> progressCallback = nullptr);
-    Result calculateFromBuffer(const QByteArray& buffer, const Settings& settings, std::function<void(int)> progressCallback = nullptr);
+    uint32_t calculateFromFile(const QString& filePath, const Settings& settings, qint64 chunkSize, std::function<void(int)> progressCallback = nullptr);
+
+    uint32_t calculateFromBuffer(const QByteArray& buffer, const Settings& settings, std::function<void(int)> progressCallback = nullptr);
 
 private:
     uint32_t calculateChunk(const uint8_t* data, size_t length, Algorithm algo);
