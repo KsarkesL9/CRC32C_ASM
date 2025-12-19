@@ -20,7 +20,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <MASM Include="asm_add.asm">
+    <MASM Include="crc32c_asm.asm">
       <Filter>Pliki źródłowe</Filter>
     </MASM>
   </ItemGroup>

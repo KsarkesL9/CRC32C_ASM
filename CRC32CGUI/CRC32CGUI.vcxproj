@@ -104,7 +104,9 @@
     <QtRcc Include="CRC32CGUI.qrc" />
     <QtUic Include="CRC32CGUI.ui" />
     <QtMoc Include="mainwindow.h" />
+    <ClInclude Include="CrcCalculator.h" />
     <ClCompile Include="mainwindow.cpp" />
+    <ClCompile Include="CrcCalculator.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

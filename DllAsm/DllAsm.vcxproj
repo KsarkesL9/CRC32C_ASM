@@ -133,7 +133,7 @@
     <None Include="asm_add.def" />
   </ItemGroup>
   <ItemGroup>
-    <MASM Include="asm_add.asm" />
+    <MASM Include="crc32c_asm.asm" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

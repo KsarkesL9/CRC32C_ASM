@@ -242,28 +242,6 @@ void MainWindow::on_pushBtnBrowse_clicked()
     ui.progressBar->setValue(0);
 }
 
-uint32_t MainWindow::calculateChunk(const uint8_t* data, size_t length, int algoIndex)
-{
-    uint32_t crc = 0;
-
-    if (algoIndex == 0) {
-        crc = CppCrc32cUpdateBitwise(crc, data, length);
-    }
-    else if (algoIndex == 1) {
-        crc = CppCrc32cUpdateSlicing1(crc, data, length);
-    }
-    else if (algoIndex == 2) {
-        crc = CppCrc32cUpdateSlicing8(crc, data, length);
-    }
-    else if (algoIndex == 3) {
-        crc = AsmCrc32cHardwareScalar(crc, data, length);
-    }
-    else if (algoIndex == 4) {
-        crc = AsmCrc32cHardwarePipelining(crc, data, length);
-    }
-    return crc;
-}
-
 void MainWindow::on_pushBtnCalculate_clicked()
 {
     if (!m_isRamLoaded && ui.lineEditFilePath->text().isEmpty()) {
@@ -271,10 +249,11 @@ void MainWindow::on_pushBtnCalculate_clicked()
         return;
     }
 
-    int algoIndex = ui.comboBoxAlgo->currentData().toInt();
-    int threadCount = ui.comboBoxThreads->currentData().toInt();
+    CrcCalculator::Settings settings;
+    settings.algorithm = static_cast<CrcCalculator::Algorithm>(ui.comboBoxAlgo->currentData().toInt());
+    settings.threadCount = ui.comboBoxThreads->currentData().toInt();
 
-    if (algoIndex == 0) threadCount = 1;
+    if (settings.algorithm == CrcCalculator::CppBitwise) settings.threadCount = 1;
 
     ui.pushBtnCalculate->setEnabled(false);
     ui.comboBoxAlgo->setEnabled(false);
@@ -291,141 +270,28 @@ void MainWindow::on_pushBtnCalculate_clicked()
     QApplication::processEvents();
 
     uint32_t finalCrc = 0;
-
     qint64 fileSize = 0;
+
     if (m_isRamLoaded) fileSize = m_ramBuffer.size();
     else fileSize = QFileInfo(ui.lineEditFilePath->text()).size();
 
     QElapsedTimer timer;
     timer.start();
 
-    auto processBufferParallel = [&](const uint8_t* buffer, size_t totalSize) -> uint32_t {
-        if (threadCount == 1) {
-            uint32_t crc = CppCrc32cInit();
-            if (algoIndex == 0) crc = CppCrc32cUpdateBitwise(crc, buffer, totalSize);
-            else if (algoIndex == 1) crc = CppCrc32cUpdateSlicing1(crc, buffer, totalSize);
-            else if (algoIndex == 2) crc = CppCrc32cUpdateSlicing8(crc, buffer, totalSize);
-            else if (algoIndex == 3) crc = AsmCrc32cHardwareScalar(crc, buffer, totalSize);
-            else if (algoIndex == 4) crc = AsmCrc32cHardwarePipelining(crc, buffer, totalSize);
-            return CppCrc32cFinalize(crc);
-        }
-
-        std::vector<std::future<uint32_t>> futures;
-        size_t chunkSize = totalSize / threadCount;
-        size_t remainder = totalSize % threadCount;
-        size_t currentOffset = 0;
-
-        for (int i = 0; i < threadCount; ++i) {
-            size_t size = chunkSize + (i < remainder ? 1 : 0);
-            if (size == 0) continue;
-
-            const uint8_t* chunkPtr = buffer + currentOffset;
-
-            futures.push_back(std::async(std::launch::async, [=]() {
-                return calculateChunk(chunkPtr, size, algoIndex);
-                }));
-
-            currentOffset += size;
-        }
-
-        uint32_t runningCrc = CppCrc32cInit();
-
-        currentOffset = 0;
-        chunkSize = totalSize / threadCount;
-        remainder = totalSize % threadCount;
-
-        for (int i = 0; i < threadCount; ++i) {
-            size_t size = chunkSize + (i < remainder ? 1 : 0);
-            if (size == 0) continue;
-
-            uint32_t chunkCrc = futures[i].get();
-            runningCrc = CppCrc32cCombine(runningCrc, chunkCrc, size);
-
-            currentOffset += size;
-        }
-
-        return CppCrc32cFinalize(runningCrc);
-        };
+    auto progressCallback = [this](int progress) {
+        ui.progressBar->setValue(progress);
+    };
 
     if (m_isRamLoaded) {
-        const uint8_t* rawData = reinterpret_cast<const uint8_t*>(m_ramBuffer.constData());
-        finalCrc = processBufferParallel(rawData, m_ramBuffer.size());
-        ui.progressBar->setValue(100);
+        finalCrc = m_calculator.calculateFromBuffer(m_ramBuffer, settings, progressCallback);
     }
     else {
         QString filePath = ui.lineEditFilePath->text();
-        QFile file(filePath);
-        if (!file.open(QIODevice::ReadOnly)) {
-            QMessageBox::critical(this, "Error", "Cannot open file!");
-            ui.pushBtnCalculate->setEnabled(true);
-            ui.comboBoxAlgo->setEnabled(true);
-            ui.comboBoxThreads->setEnabled(true);
-            ui.pushBtnBrowse->setEnabled(true);
-            pushBtnLoadRam->setEnabled(true);
-            comboBoxMemoryMode->setEnabled(true);
-            return;
-        }
-
         qint64 chunkSize = comboBoxMemoryMode->currentData().toLongLong();
+        
+        finalCrc = m_calculator.calculateFromFile(filePath, settings, chunkSize, progressCallback);
+        
 
-        if (chunkSize == -1) {
-            QByteArray allData = file.readAll();
-            finalCrc = processBufferParallel(reinterpret_cast<const uint8_t*>(allData.constData()), allData.size());
-            ui.progressBar->setValue(100);
-        }
-        else {
-            uint32_t runningCrc = CppCrc32cInit();
-            qint64 bytesReadTotal = 0;
-
-            while (!file.atEnd()) {
-                QByteArray chunk = file.read(chunkSize);
-                if (chunk.isEmpty()) break;
-
-                const uint8_t* rawChunk = reinterpret_cast<const uint8_t*>(chunk.constData());
-
-                if (threadCount == 1) {
-                    if (algoIndex == 0) runningCrc = CppCrc32cUpdateBitwise(runningCrc, rawChunk, chunk.size());
-                    else if (algoIndex == 1) runningCrc = CppCrc32cUpdateSlicing1(runningCrc, rawChunk, chunk.size());
-                    else if (algoIndex == 2) runningCrc = CppCrc32cUpdateSlicing8(runningCrc, rawChunk, chunk.size());
-                    else if (algoIndex == 3) runningCrc = AsmCrc32cHardwareScalar(runningCrc, rawChunk, chunk.size());
-                    else if (algoIndex == 4) runningCrc = AsmCrc32cHardwarePipelining(runningCrc, rawChunk, chunk.size());
-                }
-                else {
-                    std::vector<std::future<uint32_t>> futures;
-                    size_t currentChunkSize = chunk.size();
-                    size_t subChunkSize = currentChunkSize / threadCount;
-                    size_t rem = currentChunkSize % threadCount;
-                    size_t offset = 0;
-
-                    for (int i = 0; i < threadCount; ++i) {
-                        size_t sz = subChunkSize + (i < rem ? 1 : 0);
-                        if (sz == 0) continue;
-                        const uint8_t* ptr = rawChunk + offset;
-                        futures.push_back(std::async(std::launch::async, [=]() {
-                            return calculateChunk(ptr, sz, algoIndex);
-                            }));
-                        offset += sz;
-                    }
-
-                    offset = 0;
-                    for (int i = 0; i < threadCount; ++i) {
-                        size_t sz = subChunkSize + (i < rem ? 1 : 0);
-                        if (sz == 0) continue;
-                        uint32_t subRes = futures[i].get();
-                        runningCrc = CppCrc32cCombine(runningCrc, subRes, sz);
-                        offset += sz;
-                    }
-                }
-
-                bytesReadTotal += chunk.size();
-                if (fileSize > 0) {
-                    ui.progressBar->setValue(static_cast<int>((bytesReadTotal * 100) / fileSize));
-                }
-                QApplication::processEvents();
-            }
-            finalCrc = CppCrc32cFinalize(runningCrc);
-        }
-        file.close();
     }
 
     qint64 nsecs = timer.nsecsElapsed();
@@ -441,7 +307,7 @@ void MainWindow::on_pushBtnCalculate_clicked()
     ui.pushBtnCalculate->setEnabled(true);
     ui.comboBoxAlgo->setEnabled(true);
 
-    on_comboBoxAlgo_currentIndexChanged(algoIndex);
+    on_comboBoxAlgo_currentIndexChanged(static_cast<int>(settings.algorithm));
 
     if (!m_isRamLoaded) {
         ui.pushBtnBrowse->setEnabled(true);
@@ -449,6 +315,7 @@ void MainWindow::on_pushBtnCalculate_clicked()
         comboBoxMemoryMode->setEnabled(true);
     }
 }
+
 
 QString MainWindow::formatFileSize(qint64 size)
 {

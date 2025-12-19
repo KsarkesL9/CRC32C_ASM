@@ -22,7 +22,7 @@
     <ClInclude Include="dll_cpp.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="dll_cpp.cpp" />
+    <ClCompile Include="crc32c_impl.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>

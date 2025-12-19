@@ -4,13 +4,8 @@
 #include <QLabel>
 #include <QComboBox>
 #include <QPushButton>
-#include <vector>
-#include <future>
 #include "ui_CRC32CGUI.h" 
-#include "../DllCpp/dll_cpp.h" 
-
-extern "C" uint32_t AsmCrc32cHardwareScalar(uint32_t currentCrc, const uint8_t* data, size_t length);
-extern "C" uint32_t AsmCrc32cHardwarePipelining(uint32_t currentCrc, const uint8_t* data, size_t length);
+#include "CrcCalculator.h"
 
 class MainWindow : public QMainWindow
 {
@@ -37,11 +32,11 @@ private:
     QByteArray m_ramBuffer;
     bool m_isRamLoaded;
 
+    CrcCalculator m_calculator;
+
     QString formatFileSize(qint64 size);
     QString formatTimeElapsed(qint64 nanoseconds);
     void applyProfessionalStyle();
     void setupMemoryControls();
     void setupRamControl();
-
-    uint32_t calculateChunk(const uint8_t* data, size_t length, int algoIndex);
 };
